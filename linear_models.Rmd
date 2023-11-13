@@ -1,0 +1,130 @@
+---
+title: "Linear Models"
+output: github_document
+---
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+```
+
+## Load and clean Airbnb data
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb |> 
+  mutate(stars = review_scores_location / 2) |> 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood) |> 
+  filter(borough != "Staten Island") |> 
+  select(price, stars, borough, neighborhood, room_type)
+
+
+```
+
+
+Let's fit a model!
+```{r}
+fit = 
+  nyc_airbnb |>
+  lm(price ~ stars + borough, data = _)
+fit
+
+# same as:
+lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+Look at fit:
+```{r}
+fit
+
+summary(fit) 
+# gives IQR, residuals, all coefficients, SE, t-values, p-values
+
+```
+
+Tidy up output instead:
+```{r}
+fit |> 
+  broom::glance()
+```
+
+tidy up coefficients:
+```{r}
+fit |> 
+  broom::tidy() |> 
+  mutate(term = str_replace(term, "^borough", "Borough: ")) |> 
+  select(term, estimate, p.value) |> 
+  knitr::kable(digits = 3)
+# pulls coefficient table as a tibble (dataframe) -- easier to use
+```
+
+
+## Fit another model
+```{r}
+fit = 
+  nyc_airbnb |>
+  mutate(
+    borough = fct_infreq(borough),
+    room_type = fct_infreq(room_type)) |> # makes manhattan reference and apt ref
+  lm(price ~ stars + borough + room_type, data = _)
+
+fit |> 
+  broom::tidy()
+```
+
+
+
+## Look at Diagnostics
+```{r}
+modelr::add_residuals(nyc_airbnb, fit)
+modelr::add_predictions(nyc_airbnb, fit)
+```
+
+
+Like many things in the tidyverse, the first argument is a dataframe. That makes it easy to included steps adding residuals or predictions in pipeline of commands to conduct inspections and perform diagnostics.
+
+```{r}
+# violin plot
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = borough, y = resid)) + 
+  geom_violin()
+
+# scatter plot
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = stars, y = resid)) + 
+  geom_point()
+
+#density plot
+nyc_airbnb |> 
+  modelr::add_residuals(fit) |> 
+  ggplot(aes(x = resid)) + 
+  geom_density() + 
+  xlim(-100, 500)
+```
+
+
+## Hypothesis Test for categorical predictor
+fit null and alternative model
+```{r}
+fit_null =  lm(price ~ stars + borough, data = nyc_airbnb)
+fit_alt =  lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+
+anova(fit_null, fit_alt) |> # compare models
+  broom::tidy()
+```
+
+
+
+
+
+
+
+
+
+
+
+
