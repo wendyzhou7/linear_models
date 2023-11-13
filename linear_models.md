@@ -274,3 +274,166 @@ anova(fit_null, fit_alt) |> # compare models
     ##   <chr>                             <dbl>  <dbl> <dbl>   <dbl>     <dbl>   <dbl>
     ## 1 price ~ stars + borough           30525 1.01e9    NA NA            NA       NA
     ## 2 price ~ stars + borough + …       30523 9.21e8     2  8.42e7     1394.       0
+
+## Borough-level differences
+
+``` r
+fit = 
+  nyc_airbnb |> 
+  lm(price = stars*borough + room_type*borough, data = _) #whether price depends on stars & look at interactions
+```
+
+    ## Warning: In lm.fit(x, y, offset = offset, singular.ok = singular.ok, ...) :
+    ##  extra argument 'price' will be disregarded
+
+``` r
+fit |> 
+  broom::tidy()
+```
+
+    ## # A tibble: 184 × 5
+    ##    term                          estimate std.error statistic  p.value
+    ##    <chr>                            <dbl>     <dbl>     <dbl>    <dbl>
+    ##  1 (Intercept)                    130.        39.4      3.30  0.000971
+    ##  2 stars                            0.776      2.65     0.292 0.770   
+    ##  3 boroughBrooklyn                 25.5       41.2      0.619 0.536   
+    ##  4 boroughManhattan               107.        38.2      2.79  0.00532 
+    ##  5 boroughQueens                   11.0       42.2      0.260 0.795   
+    ##  6 neighborhoodArverne             20.5       29.0      0.708 0.479   
+    ##  7 neighborhoodAstoria              7.45      20.6      0.363 0.717   
+    ##  8 neighborhoodBath Beach         -16.2       72.2     -0.224 0.823   
+    ##  9 neighborhoodBattery Park City   -6.26      30.3     -0.206 0.837   
+    ## 10 neighborhoodBay Ridge          -14.4       27.2     -0.529 0.597   
+    ## # ℹ 174 more rows
+
+``` r
+airbnb_lm =
+  nyc_airbnb |> 
+  nest(data = -borough) |> 
+  mutate(
+    models = map(data, \(df) lm(price ~ stars + room_type, data = df)),
+    results = map(models, broom::tidy)) |> 
+  select(-data, -models) |> 
+  unnest(results)
+
+airbnb_lm |> 
+  select(borough, term, estimate) |> 
+  mutate(term = fct_inorder(term)) |> 
+  pivot_wider(
+    names_from = term, values_from = estimate) |> 
+  knitr::kable(digits = 2)
+```
+
+| borough   | (Intercept) | stars | room_typePrivate room | room_typeShared room |
+|:----------|------------:|------:|----------------------:|---------------------:|
+| Bronx     |       90.07 |  4.45 |                -52.91 |               -70.55 |
+| Queens    |       91.58 |  9.65 |                -69.26 |               -94.97 |
+| Brooklyn  |       69.63 | 20.97 |                -92.22 |              -105.84 |
+| Manhattan |       95.69 | 27.11 |               -124.19 |              -153.64 |
+
+Same, but a bit different
+
+``` r
+manhattan_airbnb =
+  nyc_airbnb |> 
+  filter(borough == "Manhattan")
+
+manhattan_nest_lm_res =
+  manhattan_airbnb |> 
+  nest(data = -neighborhood) |> 
+  mutate(
+    models = map(data, \(df) lm(price ~ stars + room_type, data = df)), 
+    # \(df) gives argument datafram --anonymous function that only exists in this line of code and not in the environment
+    results = map(models, broom::tidy)) |> 
+  select(-data, -models) |> 
+  unnest(results)
+```
+
+## Homicides in Baltimore data
+
+``` r
+baltimore_df = 
+  read_csv("data/homicide-data.csv") |> 
+  filter(city == "Baltimore") |> 
+  mutate(
+    resolved = as.numeric(disposition == "Closed by arrest"),
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "White")) |> 
+  select(resolved, victim_age, victim_race, victim_sex)
+```
+
+    ## Rows: 52179 Columns: 12
+    ## ── Column specification ────────────────────────────────────────────────────────
+    ## Delimiter: ","
+    ## chr (9): uid, victim_last, victim_first, victim_race, victim_age, victim_sex...
+    ## dbl (3): reported_date, lat, lon
+    ## 
+    ## ℹ Use `spec()` to retrieve the full column specification for this data.
+    ## ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+
+Generalized Linear Model
+
+``` r
+fit_logistic = 
+  baltimore_df |> 
+  glm(resolved ~ victim_age + victim_race + victim_sex, data = _, family = binomial()) # binomial dist.
+
+fit_logistic
+```
+
+    ## 
+    ## Call:  glm(formula = resolved ~ victim_age + victim_race + victim_sex, 
+    ##     family = binomial(), data = baltimore_df)
+    ## 
+    ## Coefficients:
+    ##         (Intercept)           victim_age     victim_raceAsian  
+    ##             1.19005             -0.00724              0.29635  
+    ##    victim_raceBlack  victim_raceHispanic     victim_raceOther  
+    ##            -0.84176             -0.26527             -0.76809  
+    ##      victim_sexMale  
+    ##            -0.87966  
+    ## 
+    ## Degrees of Freedom: 2826 Total (i.e. Null);  2820 Residual
+    ## Null Deviance:       3676 
+    ## Residual Deviance: 3589  AIC: 3603
+
+look at model results
+
+``` r
+fit_logistic |> 
+  broom::tidy() |> 
+  mutate(OR = exp(estimate)) |>
+  select(term, log_OR = estimate, OR, p.value) |> 
+  knitr::kable(digits = 3)
+```
+
+| term                | log_OR |    OR | p.value |
+|:--------------------|-------:|------:|--------:|
+| (Intercept)         |  1.190 | 3.287 |   0.000 |
+| victim_age          | -0.007 | 0.993 |   0.027 |
+| victim_raceAsian    |  0.296 | 1.345 |   0.653 |
+| victim_raceBlack    | -0.842 | 0.431 |   0.000 |
+| victim_raceHispanic | -0.265 | 0.767 |   0.402 |
+| victim_raceOther    | -0.768 | 0.464 |   0.385 |
+| victim_sexMale      | -0.880 | 0.415 |   0.000 |
+
+``` r
+baltimore_df |> 
+  modelr::add_predictions(fit_logistic) |> 
+  mutate(fitted_prob = boot::inv.logit(pred))
+```
+
+    ## # A tibble: 2,827 × 6
+    ##    resolved victim_age victim_race victim_sex    pred fitted_prob
+    ##       <dbl>      <dbl> <fct>       <chr>        <dbl>       <dbl>
+    ##  1        0         17 Black       Male       -0.654        0.342
+    ##  2        0         26 Black       Male       -0.720        0.327
+    ##  3        0         21 Black       Male       -0.683        0.335
+    ##  4        1         61 White       Male       -0.131        0.467
+    ##  5        1         46 Black       Male       -0.864        0.296
+    ##  6        1         27 Black       Male       -0.727        0.326
+    ##  7        1         21 Black       Male       -0.683        0.335
+    ##  8        1         16 Black       Male       -0.647        0.344
+    ##  9        1         21 Black       Male       -0.683        0.335
+    ## 10        1         44 Black       Female      0.0297       0.507
+    ## # ℹ 2,817 more rows
